@@ -1,0 +1,4 @@
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.lablaut filter=lfs diff=lfs merge=lfs -text
+*.labsilb filter=lfs diff=lfs merge=lfs -text
+*.silb filter=lfs diff=lfs merge=lfs -text
