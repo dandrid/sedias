@@ -1,15 +1,16 @@
 import numpy as np
 import pandas as pd
 import soundfile as sf
+import librosa
 import os
 
 
 class RAVDESS:
 
     def __init__(self):
-        self.separator="-"
-        self.audio_only="03"
-        self.voice_channel="01"
+        self.separator = "-"
+        self.audio_only = "03"
+        self.voice_channel = "01"
         self.emotions = np.array([
             ("neutral", "01"), 
             ("calm", "02"), 
@@ -47,6 +48,7 @@ class RAVDESS:
             ("female", "22"), 
             ("male", "23"), 
             ("female", "24")])
+        return
 
     # Add noise to the audio to create more samples
     def createAudioWithNoise(self, data):
@@ -63,27 +65,36 @@ class RAVDESS:
     def createDataFrame(self):
         data = []
         
+        label = 0 # label index
+        suffix = 1 # suffix index
+        
         print("loading audio files and enriching them")
         for emotion in self.emotions:
             for emotion_intensity in self.emotion_intensities:
                 for statement in self.statements:
                     for repetition in self.repetitions:
                         for actor in self.actors:
-                            actor_gender = actor[0]
-                            currentFile = "data/RAVDESS/Actor_" + actor[1] + "/" + self.addSepartors([self.audio_only, self.voice_channel, emotion[1], emotion_intensity[1], statement[1], repetition, actor[1]]) + ".wav"
-                            exists = os.path.isfile(currentFile)
+                            actor_gender = actor[label]
+                            current_file = "data/RAVDESS/Actor_" + actor[suffix] + "/" + self.addSepartors([ # construct the file name
+                                    self.audio_only, 
+                                    self.voice_channel, 
+                                    emotion[suffix], 
+                                    emotion_intensity[suffix], 
+                                    statement[suffix], 
+                                    repetition, 
+                                    actor[suffix]]) + ".wav"
+                            exists = os.path.isfile(current_file) # if the file exists
                             if exists:
-                                audio_data, samplerate = sf.read(currentFile)
-                                data.append([emotion[0], emotion_intensity[0], statement[0], repetition, actor[1], actor_gender, samplerate, audio_data])
+                                audio_data, samplerate = sf.read(current_file) # load the audio
+                                data.append([emotion[label], emotion_intensity[label], statement[label], repetition, actor[suffix], actor_gender, samplerate, audio_data]) # add original audio to the data
                                 
-                                noised_audio_datas = self.createAudioWithNoise(audio_data)
+                                noised_audio_datas = self.createAudioWithNoise(audio_data) # create noised version of the original audio
                                 for noised_audio_data in noised_audio_datas:
-                                    data.append([emotion[0], emotion_intensity[0], statement[0], repetition, actor[1], actor_gender, samplerate, noised_audio_data])
+                                    data.append([emotion[label], emotion_intensity[label], statement[label], repetition, actor[suffix], actor_gender, samplerate, noised_audio_data]) # add noised audio to enrich data
                                 
         print("number of samples: " + str(len(data)))
-        
-        pd.set_option('display.max_columns', 500)
-        df = pd.DataFrame(
+
+        df = pd.DataFrame(  # contruct DataFrame from data
             { 
                 'emotion'           : pd.Categorical([row[0] for row in data]),
                 'emotion intensity' : pd.Categorical([row[1] for row in data]),
@@ -100,6 +111,88 @@ class RAVDESS:
         return "-".join(fragments)
 
 
+class EMODB:
+    def __init__(self):
+        self.actors = np.array([
+            ("male", "03"), 
+            ("female", "08"), 
+            ("female", "09"), 
+            ("male", "10"), 
+            ("male", "11"), 
+            ("male", "12"),
+            ("female", "13"),
+            ("female", "14"), 
+            ("male", "15"), 
+            ("female", "16")])
+        self.statements = np.array([
+            ("Der Lappen liegt auf dem Eisschrank.", "a01"), 
+            ("Das will sie am Mittwoch abgeben.", "a02"),
+            ("Heute abend könnte ich es ihm sagen.", "a04"), 
+            ("Das schwarze Stück Papier befindet sich da oben neben dem Holzstück.", "a05"),
+            ("In sieben Stunden wird es soweit sein.", "a07"), 
+            ("Was sind denn das für Tüten, die da unter dem Tisch stehen?", "b01"),
+            ("Sie haben es gerade hochgetragen und jetzt gehen sie wieder runter.	", "b02"), 
+            ("An den Wochenenden bin ich jetzt immer nach Hause gefahren und habe Agnes besucht.", "b03"),
+            ("Ich will das eben wegbringen und dann mit Karl was trinken gehen.", "b09"), 
+            ("Die wird auf dem Platz sein, wo wir sie immer hinlegen.", "b10")])
+        self.emotions = np.array([
+            ("neutral", "N"), 
+            ("anger", "W"), # Wut
+            ("boredom", "L"), # Langeweile
+            ("disgust", "E"), # Ekel
+            ("anxiety/fear", "A"), # Angst
+            ("happiness", "F"), # Freude
+            ("sadness", "T"), # Trauer
+            ])
+        self.repetitions = np.array(["a", "b", "c", "d", "e", "f"])
+        return
+    
+    
+    def createDataFrame(self):
+        data = []
+
+        label = 0 # label index
+        suffix = 1 # suffix index
+
+        print("loading audio files and converting them")
+        for actor in self.actors:
+            actor_gender = actor[label]
+            for statement in self.statements:
+                for emotion in self.emotions:
+                    for repetition in self.repetitions:
+
+                        current_file = "data/emodb/wav/" + actor[suffix] + statement[suffix] + emotion[suffix] + repetition + ".wav"
+                        exists = os.path.isfile(current_file) # if the file exists
+                        if exists:
+                            audio_data_original, samplerate_original = sf.read(current_file) # load the audio
+                            samplerate_48k = 48000
+                            audio_data_48k = librosa.resample(audio_data_original, samplerate_original, samplerate_48k)
+                            data.append([emotion[label], statement[label], repetition, actor[suffix], actor_gender, samplerate_48k, audio_data_48k]) # add original audio to the data
+        
+        print("number of samples: " + str(len(data)))
+        
+        df = pd.DataFrame(  # contruct DataFrame from data
+            { 
+                'emotion'           : pd.Categorical([row[0] for row in data]),
+                'statement'         : pd.Categorical([row[1] for row in data]),
+                'repetition'        : pd.Categorical([row[2] for row in data]),
+                'actor'             : pd.Categorical([row[3] for row in data]),
+                'actor gender'      : pd.Categorical([row[4] for row in data]),
+                'samplerate'        : pd.Categorical([row[5] for row in data]),
+                'audio data'        : pd.Series([row[6] for row in data])
+            })
+        return df
+
+
+
+print("RAVDESS:")
 ravdess = RAVDESS()
-df = ravdess.createDataFrame()
-print("Date frame size: " + str(len(df)))
+df_ravdess = ravdess.createDataFrame()
+print("Date frame size: " + str(len(df_ravdess)))
+
+
+print("EMODB:")
+
+emodb = EMODB()
+df_emodb = emodb.createDataFrame()
+print("Date frame size: " + str(len(df_emodb)))
