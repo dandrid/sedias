@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import soundfile as sf
-import librosa
+from scipy.signal import spectrogram
 import os
 
 
@@ -169,9 +169,10 @@ class EMODB:
                         if exists:
                             audio_data_original, samplerate_original = sf.read(current_file) # load the audio
                             samplerate_48k = 48000
-                            audio_data_48k = librosa.resample(audio_data_original, samplerate_original, samplerate_48k)
-                            data.append([emotion[label], statement[label], repetition, actor[suffix], actor_gender, samplerate_48k, audio_data_48k]) # add original audio to the data
-        
+                            #audio_data_48k = librosa.resample(audio_data_original, samplerate_original, samplerate_48k)
+                            #data.append([emotion[label], statement[label], repetition, actor[suffix], actor_gender, samplerate_48k, audio_data_48k]) # add original audio to the data
+                            data.append([emotion[label], statement[label], repetition, actor[suffix], actor_gender, samplerate_original, audio_data_original]) # add original audio to the data
+
         print("number of samples: " + str(len(data)))
         
         df = pd.DataFrame(  # contruct DataFrame from data
@@ -192,15 +193,57 @@ class EMODB:
 
 pd.set_option("max_columns" , None)
 
+train_split = 0.7
+valid_split = 0.2
+test_split = 0.1
+
 print("RAVDESS:")
 ravdess = RAVDESS()
 df_ravdess = ravdess.createDataFrame()
-print("Date frame size: " + str(len(df_ravdess)))
-print(df_ravdess.head())
 
 print("EMODB:")
 
 emodb = EMODB()
 df_emodb = emodb.createDataFrame()
 print("Date frame size: " + str(len(df_emodb)))
-print(df_emodb.head())
+
+noise_mean = 0
+nois_dev = 1
+
+emodb_len = df_emodb.shape[0]
+
+#dataset augmentation
+for i in range(emodb_len):
+    new_frame = df_emodb.iloc[i]
+    current_sound = df_emodb.iloc[i]["audio_data"]
+
+    new_frame["audio_data"] = current_sound + np.random.normal(noise_mean, nois_dev, current_sound.shape[0])
+    df_emodb = df_emodb.append(new_frame,ignore_index=True)
+
+ravdess_len = df_ravdess.shape[0]
+
+#append ravdess to emodb augmentation
+for i in range(ravdess_len):
+    rav_frame = df_ravdess.iloc[i]
+
+    df_emodb = df_emodb.append(rav_frame,ignore_index=True)
+
+spg = pd.DataFrame(columns=['spectrogram'])
+#calculating spectrogram
+for i in range(emodb_len):
+
+    f, t, spect = spectrogram(df_emodb.iloc[i]["audio_data"],48000)
+    df_to_add = pd.DataFrame([[spect]], columns=['spectrogram'])
+    spg = spg.append(df_to_add,ignore_index=True)
+
+emodb_len = df_emodb.shape[0]
+
+#datas were read in order make them random
+shuffled_db = df_emodb.sample(emodb_len)
+
+#setting datas
+train_data = shuffled_db[:int(emodb_len*train_split)]
+valid_data = shuffled_db[int(emodb_len*train_split)+1:int(emodb_len*(train_split+valid_split))]
+test_data = shuffled_db[int(emodb_len*(train_split+valid_split))+1:]
+
+
